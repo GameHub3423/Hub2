@@ -1060,6 +1060,49 @@
     .game-card:nth-child(7)  { transition-delay: 0.21s; }
     .game-card:nth-child(8)  { transition-delay: 0.28s; }
     .game-card:nth-child(n+9){ transition-delay: 0.1s; }
+
+    /* ===== SLIDE ADMIN BUTTONS ===== */
+    .slide-admin-actions {
+      position: absolute;
+      top: 12px; right: 12px;
+      display: flex; gap: 8px;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .hero-slide:hover .slide-admin-actions { opacity: 1; }
+    .slide-edit-btn, .slide-del-btn {
+      background: rgba(0,0,0,0.7);
+      border: 1px solid var(--border);
+      color: #fff;
+      width: 34px; height: 34px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .slide-edit-btn:hover { border-color: var(--gold); background: rgba(255,215,0,0.15); }
+    .slide-del-btn:hover  { border-color: var(--red);  background: rgba(232,0,29,0.2); }
+
+    /* ===== SNAKE / PARTICLE BG CANVAS ===== */
+    #detail-bg-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+    }
+    #detail-overlay > div { position: relative; z-index: 1; }
+    #games-bg-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .games-section { position: relative; overflow: hidden; }
+    .games-section > *:not(#games-bg-canvas) { position: relative; z-index: 1; }
+
   </style>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -1131,6 +1174,7 @@
 
   <!-- GAMES -->
   <section class="games-section">
+    <canvas id="games-bg-canvas"></canvas>
     <p class="section-title">— <span>Koleksi Game</span> —</p>
     <div id="game-grid">
       <!-- Kartu akan diisi JS -->
@@ -1159,7 +1203,7 @@
       <div class="section-selector">
         <div class="section-opt active" id="sec-featured" onclick="selectSection('featured')">
           <div class="sec-icon">⭐</div>
-          <div class="sec-label">FEATURED</div>
+          <div class="sec-label">SLIDE</div>
         </div>
         <div class="section-opt" id="sec-collection" onclick="selectSection('collection')">
           <div class="sec-icon">🎮</div>
@@ -1255,6 +1299,7 @@
   <!-- MODAL DETAIL GAME -->
   <!-- DETAIL PAGE OVERLAY -->
   <div id="detail-overlay" style="display:none;position:fixed;inset:0;z-index:2000;background:var(--bg);overflow-y:auto;">
+    <canvas id="detail-bg-canvas"></canvas>
     <div style="max-width:1100px;margin:0 auto;padding:20px 16px 60px;">
       <!-- Back button -->
       <button onclick="closeDetail()" style="background:none;border:none;color:var(--muted);font-family:Orbitron,monospace;font-size:0.75rem;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:24px;padding:0;">
@@ -1331,7 +1376,7 @@
       <div class="section-selector">
         <div class="section-opt active" id="edit-sec-featured" onclick="selectEditSection('featured')">
           <div class="sec-icon">⭐</div>
-          <div class="sec-label">FEATURED</div>
+          <div class="sec-label">SLIDE</div>
         </div>
         <div class="section-opt" id="edit-sec-collection" onclick="selectEditSection('collection')">
           <div class="sec-icon">🎮</div>
@@ -1891,7 +1936,20 @@
               <span class="hero-slide-price">${g.price}</span>
             </div>
           </div>
+          ${isAdmin ? `<div class="slide-admin-actions">
+            <button class="slide-edit-btn" title="Edit">✏️</button>
+            <button class="slide-del-btn" title="Hapus">🗑️</button>
+          </div>` : ''}
         `;
+        // Admin button events
+        if (isAdmin) {
+          slide.querySelector('.slide-edit-btn').addEventListener('click', e => {
+            e.stopPropagation(); openEditModal(g.id);
+          });
+          slide.querySelector('.slide-del-btn').addEventListener('click', e => {
+            e.stopPropagation(); deleteGame(g.id);
+          });
+        }
         track.appendChild(slide);
 
         const dot = document.createElement('div');
@@ -2028,6 +2086,168 @@
       draw();
       window.addEventListener('resize', () => { resize(); });
     })();
+
+    // ── SNAKE / PARTICLE BG EFFECTS ────────────────────────────────
+    function initSnakeCanvas(canvasId, options) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return null;
+      const ctx = canvas.getContext('2d');
+      const opt = Object.assign({ color: '232,0,29', snakeCount: 4, particleCount: 30 }, options);
+
+      function resize() {
+        canvas.width  = canvas.offsetWidth  || canvas.parentElement.offsetWidth;
+        canvas.height = canvas.offsetHeight || canvas.parentElement.offsetHeight;
+      }
+      resize();
+
+      // Snake segments
+      const snakes = Array.from({ length: opt.snakeCount }, (_, si) => {
+        const pts = [];
+        const segLen = 18 + Math.random() * 20;
+        const totalPts = 28 + Math.floor(Math.random() * 20);
+        let x = Math.random() * canvas.width;
+        let y = Math.random() * canvas.height;
+        for (let i = 0; i < totalPts; i++) pts.push({ x, y });
+        return {
+          pts, segLen,
+          angle: Math.random() * Math.PI * 2,
+          speed: 0.6 + Math.random() * 0.8,
+          turnSpeed: 0.03 + Math.random() * 0.04,
+          turnDir: Math.random() < 0.5 ? 1 : -1,
+          turnTimer: 0,
+          turnInterval: 60 + Math.random() * 120,
+          hue: Math.random() * 30 - 15,
+          alpha: 0.3 + Math.random() * 0.4,
+        };
+      });
+
+      // Floating particles
+      const particles = Array.from({ length: opt.particleCount }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 2 + 0.5,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: -0.3 - Math.random() * 0.5,
+        alpha: Math.random(),
+        life: Math.random(),
+        speed: 0.003 + Math.random() * 0.004,
+      }));
+
+      let raf;
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw snakes
+        snakes.forEach(sn => {
+          // Move head
+          sn.turnTimer++;
+          if (sn.turnTimer > sn.turnInterval) {
+            sn.turnDir = Math.random() < 0.5 ? 1 : -1;
+            sn.turnInterval = 60 + Math.random() * 120;
+            sn.turnTimer = 0;
+          }
+          sn.angle += sn.turnSpeed * sn.turnDir * 0.05;
+          // Wrap screen
+          let hx = sn.pts[0].x + Math.cos(sn.angle) * sn.speed;
+          let hy = sn.pts[0].y + Math.sin(sn.angle) * sn.speed;
+          if (hx < 0) hx = canvas.width;
+          if (hx > canvas.width) hx = 0;
+          if (hy < 0) hy = canvas.height;
+          if (hy > canvas.height) hy = 0;
+          // Shift segments
+          for (let i = sn.pts.length - 1; i > 0; i--) {
+            const dx = sn.pts[i-1].x - sn.pts[i].x;
+            const dy = sn.pts[i-1].y - sn.pts[i].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > sn.segLen) {
+              sn.pts[i].x += (dx / dist) * (dist - sn.segLen);
+              sn.pts[i].y += (dy / dist) * (dist - sn.segLen);
+            }
+          }
+          sn.pts[0].x = hx;
+          sn.pts[0].y = hy;
+
+          // Draw
+          if (sn.pts.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(sn.pts[0].x, sn.pts[0].y);
+          for (let i = 1; i < sn.pts.length; i++) {
+            ctx.lineTo(sn.pts[i].x, sn.pts[i].y);
+          }
+          const grad = ctx.createLinearGradient(
+            sn.pts[0].x, sn.pts[0].y,
+            sn.pts[sn.pts.length-1].x, sn.pts[sn.pts.length-1].y
+          );
+          grad.addColorStop(0, `rgba(${opt.color},${sn.alpha})`);
+          grad.addColorStop(1, `rgba(${opt.color},0)`);
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.shadowColor = `rgba(${opt.color},0.6)`;
+          ctx.shadowBlur = 8;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Head glow dot
+          ctx.beginPath();
+          ctx.arc(sn.pts[0].x, sn.pts[0].y, 3.5, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(${opt.color},${sn.alpha * 1.5})`;
+          ctx.fill();
+        });
+
+        // Draw particles
+        particles.forEach(p => {
+          p.life += p.speed;
+          if (p.life > 1) {
+            p.life = 0;
+            p.x = Math.random() * canvas.width;
+            p.y = canvas.height + 10;
+            p.vy = -0.3 - Math.random() * 0.5;
+            p.vx = (Math.random() - 0.5) * 0.5;
+          }
+          p.x += p.vx;
+          p.y += p.vy;
+          const alpha = Math.sin(p.life * Math.PI) * 0.7;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(${opt.color},${alpha})`;
+          ctx.shadowColor = `rgba(${opt.color},0.8)`;
+          ctx.shadowBlur = 6;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+
+        raf = requestAnimationFrame(draw);
+      }
+      draw();
+      window.addEventListener('resize', () => { resize(); });
+      return { stop: () => cancelAnimationFrame(raf) };
+    }
+
+    // Init games section snake background - wait for layout
+    setTimeout(() => {
+      const gc = document.getElementById('games-bg-canvas');
+      if (gc) {
+        gc.width  = gc.parentElement.offsetWidth  || window.innerWidth;
+        gc.height = gc.parentElement.offsetHeight || 600;
+      }
+      initSnakeCanvas('games-bg-canvas', { color: '232,0,29', snakeCount: 5, particleCount: 35 });
+    }, 300);
+
+    // Init detail page snake background when opened
+    let detailSnake = null;
+    const _origOpenDetail = openDetail;
+    openDetail = function(g) {
+      _origOpenDetail(g);
+      if (!detailSnake) {
+        setTimeout(() => {
+          initSnakeCanvas('detail-bg-canvas', { color: '232,0,29', snakeCount: 4, particleCount: 25 });
+        }, 50);
+        detailSnake = true;
+      }
+    };
+
   </script>
 </body>
 </html>
